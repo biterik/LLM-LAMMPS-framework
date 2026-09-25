@@ -978,6 +978,18 @@ Every session is in one of three modes, declared at startup:
   that surfaces one routes it through `canon/proposals-inbox.md`.
   (Retired 2026-07-28: these used to live in a separate host-provided
   "auto-memory" store. See §6.4.)
+- **One source of truth, one generated public snapshot (2026-09-25).**
+  This repo is private and authoritative. The public repo
+  `<GITHUB_USER>/LLM-LAMMPS-framework` is produced from it by
+  `canon/templates/export-public.sh` (allowlist + word substitutions +
+  the identity lint as a gate; see `canon/templates/public/`). Nobody
+  edits the public checkout by hand — the next export overwrites it.
+  A designer session that changed framework files runs the export as
+  step 7 of its close-out (`canon/session-startup.md`) and hands the
+  user the commit/push recipe. What stays private by construction:
+  `SESSIONS.md`, the proposals inbox, lessons, learnings, preferences,
+  `clusters.yaml`, `environments.md`, the capabilities captures,
+  `canon/local/`.
 
 ### 17.3 Mode transitions
 

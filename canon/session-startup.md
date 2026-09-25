@@ -346,6 +346,32 @@ done for today") or the conversation is clearly complete:
 5. Update relevant `thread.md` or `project.md` so future sessions
    resume cleanly.
 6. Update `last_index_updated`.
+7. **Designer close-out — publish the framework snapshot (added 2026-09-25).**
+   If this session held the designer lock and changed *anything* under
+   `canon/` (except `local/`), `ARCHITECTURE.md`, `brainstorm-notes.md`,
+   `skills/` or `examples/`, the public counterpart is now stale. The public
+   repo `<GITHUB_USER>/LLM-LAMMPS-framework` (local checkout
+   `<DEVEL_ROOT>/LLM-LAMMPS-framework/`) is a **generated** snapshot: never
+   edited by hand, always regenerated from this repo. So, before closing:
+
+   a. Run the export yourself (it is read-only towards this repo and rewrites
+      only the framework folder):
+      `bash <REPO_ROOT>/canon/templates/export-public.sh`
+      It stops with `!!` if a gate fails (identity, personal names, a private
+      file in the allowlist); fix the cause in **this** repo — extend
+      `canon/templates/public/substitutions.txt` or the allowlist — and rerun.
+   b. Give the user the commit/push recipe verbatim (he will not remember it):
+      ```
+      cd <DEVEL_ROOT>/LLM-LAMMPS-framework
+      git add -A
+      git commit -m "sync from private LLM-LAMMPS <date>"
+      git push
+      ```
+   c. Note `public_export: done|pending` in the session's `summary:` line.
+
+   If the session changed only SESSIONS.md, proposals-inbox, lessons,
+   learnings, preferences, clusters.yaml or environments.md, nothing is
+   exported (those files are private by design) — say so and skip.
 
 ## Notes
 

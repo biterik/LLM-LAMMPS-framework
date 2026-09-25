@@ -1,0 +1,34 @@
+# TOOL CARD SKELETON  (canon/tools/tool-card.skel)
+#
+# One card per tool. A card is the plain-file CONTRACT the pilot reads to
+# call a tool correctly — it is NOT the tool's source and NOT its full
+# manual. Canon holds only cards; tool code lives in its own repo deployed
+# to ~/bin/ on Mac AND the cluster (see ARCHITECTURE.md §6 "tools registry").
+#
+# Copy to canon/tools/<tool-id>.card.yaml, fill, then add a one-line entry
+# to canon/tools/tools-catalog.md. Don't guess invocations — verify against
+# the tool's --help / repo and stamp `last_verified`.
+
+id:            <short-slug, e.g. lego, dcreator>     # stable; matches catalog
+purpose:       <one line — what it does, when to reach for it>
+owner:         <internal | external>                 # internal = LLM-LAMMPS-owned & promoted; external = pre-existing
+upstream:      <repo URL or "—">                     # e.g. github.com/__GH__/LEGO
+
+run_where:     <mac | cluster | large-data->cluster> # routing policy the pilot applies
+                                                      # large-data->cluster: never run on the Mac
+
+exec:
+  mac:         <invocation on Mac, e.g. "lego <args>"; path/module notes>
+  cluster:     <invocation on cluster, incl. module loads / srun wrapping if needed>
+
+inputs:        |
+  <what it consumes: file types, required structure, expected flags>
+outputs:       |
+  <what it emits and where; naming contract if any (descriptive names — hard rule 2)>
+
+version:       <version string, or "unknown">
+last_verified: <YYYY-MM-DD against version X via --help/--version>   # re-probe when stale
+
+gotchas:       |
+  <accrues like lessons.md — failure modes, surprising defaults, version quirks.
+   Cite where each bit. Empty to start.>

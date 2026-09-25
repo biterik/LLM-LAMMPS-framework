@@ -1,0 +1,57 @@
+# TOOL CARD — lego-tools (suite)
+# Contract for the pilot. Code lives in github.com/__GH__/LEGO-TOOLS
+# (lego-tools/ subdir), built & installed to ~/bin/ on Mac AND cluster.
+# `afc` ships in the same repo but has its own card (afc.card.yaml).
+
+id:            lego-tools
+purpose:       |
+  A suite of C utilities to filter, transform, and inspect atomic
+  configurations. All read LAMMPS data, LAMMPS dump, and IMD ASCII
+  (format auto-detected; gzip transparent). Reach for these instead of
+  hand-rolling awk/python for box edits, cuts, shifts, wrapping, and
+  quick inspection.
+owner:         external
+upstream:      https://github.com/__GH__/LEGO-TOOLS
+
+run_where:     large-data->cluster      # large configs on the cluster.
+                                         # Stream-based / inspection calls
+                                         # (lego-analyze, lego-change-box) on
+                                         # small files are fine on the Mac.
+
+exec:
+  mac:         <subcommand> ...          # each binary on $PATH via ~/bin
+  cluster:     <subcommand> ...          # same names on $PATH via ~/bin
+
+common_io:     |
+  Input format auto-detected (lammps data | lammps-dump | imd); `.gz`
+  handled transparently. Output defaults to lammps data; override with
+  --out-format=lammps|lammps-dump|imd (per-tool, see table).
+
+subtools:      |
+  lego-cut      xmin xmax ymin ymax zmin zmax IN OUT
+                Keep only atoms inside the axis-aligned box; box bounds unchanged.
+  lego-shift    dx dy dz IN OUT
+                Translate all atoms AND the box by (dx,dy,dz).
+  lego-analyze  [--json] IN
+                Report format, atom count, type counts, box geometry,
+                per-column min/max, velocities present? (--json = machine-readable)
+  lego-remove-per-atom  IN OUT
+                Strip all per-atom columns except id,type,x,y,z (drop vel/force/charge/image).
+  lego-change-box   dx dy dz IN OUT        (expand upper bound)
+                OR  xlo xhi ylo yhi zlo zhi IN OUT   (set explicit bounds)
+                Orthogonal boxes only; streams line-by-line (fast on big .gz).
+  lego-nearest-atoms  x y z IN  [-k N] [--tol=EPS] [--no-pbc] [--json]
+                k nearest atoms to a point (default k=5, minimum-image PBC).
+  lego-pbc-wrap [-x|-y|-z] IN OUT
+                Wrap atoms into the box; updates image flags ix/iy/iz consistently.
+                LAMMPS format only (out: lammps | lammps-dump); triclinic rejected.
+  lego-make-box [--no-wrap] [--pad=EPS] IN OUT
+                Ensure all atoms inside box: PBC-wrap, then expand if needed (never shrinks).
+
+version:       git HEAD 99cc406 (2026-04-19)
+last_verified: 2026-04-19 against repo <DEVEL_ROOT>/LEGO-TOOLS (README "Tool Reference")
+
+gotchas:       |
+  - lego-pbc-wrap and lego-change-box are orthogonal-box only.
+  - Default output is lammps data even if input was dump/imd — set
+    --out-format explicitly when you need to preserve the input format.

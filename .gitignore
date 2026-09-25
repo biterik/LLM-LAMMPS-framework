@@ -1,0 +1,28 @@
+# macOS
+.DS_Store
+._*
+
+# Cowork / LLM data exports — never commit
+data-*/
+*conversations.json
+*memories.json
+*users.json
+
+# Raw cluster dumps (machine-specific, not framework)
+cluster-lammps-info.txt
+lammps_*_config.txt
+
+# Python
+__pycache__/
+*.pyc
+
+# Heavy simulation data (lives on cluster, not in the framework repo)
+*.zst
+*.dump
+*.data
+*.lammpstrj
+log.lammps
+
+# Local identity overlay — real cluster users/hosts/emails/home paths.
+# NEVER COMMITTED. Template lives in canon/local.example/ instead.
+canon/local/

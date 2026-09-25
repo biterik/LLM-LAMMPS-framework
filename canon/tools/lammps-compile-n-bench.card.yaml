@@ -1,0 +1,65 @@
+# TOOL CARD — LAMMPS-compile-n-bench
+# Reference card: this is a repo of build recipes + a portable benchmark,
+# not a CLI the pilot invokes on data. It is the source of truth for HOW
+# LAMMPS is built on each MPCDF machine and what throughput to expect.
+
+id:            lammps-compile-n-bench
+purpose:       >-
+  Reproducible LAMMPS build recipes and one portable PACE/ACE benchmark
+  across the MPCDF machines (cmmg, cmti, raven CPU+GPU, viper CPU+GPU).
+  Reach for it before proposing ANY new LAMMPS build, module stack, or
+  cross-machine performance claim — the numbers here are measured, not
+  estimated.
+owner:         external                 # the user's own repo, public
+upstream:      github.com/__GH__/LAMMPS-compile-n-bench
+
+run_where:     cluster                  # builds run on login nodes; benchmarks in Slurm jobs
+
+exec:
+  mac:         "—  (reference only; read the repo, do not build on Mac)"
+  cluster:     |
+    Clone the repo, then run the script for the target machine from a
+    login node (building on a login node is fine; running is not):
+      ./build-lammps-cmmg.sh          # AMD EPYC 9754 Zen4c, Kokkos/OpenMP
+      ./build-lammps-cmti.sh          # Intel Xeon Gold 6230, MPI+INTEL
+      ./build-lammps-raven.sh         # NVIDIA A100, Kokkos/CUDA
+      ./build-lammps-raven-cpu.sh     # Intel IceLake-SP, MPI+INTEL
+      ./build-lammps-viper.sh         # AMD MI300A APU, Kokkos/HIP
+      ./build-lammps-viper-cpu.sh     # AMD EPYC 9554 Genoa, Kokkos/OpenMP
+    Each `*-fork.sh` variant builds the user's fork instead of upstream.
+    Override locations with env vars, e.g.
+      SRC=/ptmp/$USER/lammps LOG=/ptmp/$USER/<machine>.log ./build-lammps-<machine>.sh
+
+inputs:        |
+  LAMMPS source (stable_22Jul2025_update4 / `stable` branch) and the
+  module stack named per machine in canon/clusters.yaml.
+outputs:       |
+  A distinctly named binary `lmp_<machine>` in `lammps/build-<machine>/`,
+  so no two builds overwrite each other. Benchmark logs alongside.
+
+reference_docs:
+  README.md:          "build matrix: hardware, Kokkos backend/arch, compiler per machine"
+  HARDWARE-GUIDE.md:  "measured GRACE/PACE GPU throughput, device specs, price/perf,
+                       capacity per device, and the TensorFlow caveat"
+  PACKAGES.md:        "which LAMMPS packages are built where, and why they differ"
+  GRACE.md:           "GRACE ML-potential specifics"
+  STATUS.md:          "current build status + gotchas per machine"
+
+version:       "LAMMPS stable_22Jul2025_update4"
+last_verified: 2026-07-28 against the repo README + build scripts (not a live run)
+
+gotchas:       |
+  - Build on a login node, run ONLY in a Slurm job. See clusters.yaml
+    cross-cluster rule 2.
+  - Never build into cluster $HOME — build trees are multi-GB and the
+    quota is tight. Point SRC/LOG at the machine's ptmp scratch.
+  - raven-cpu is the odd one out: it targets Raven's Intel Xeon CPU nodes
+    (not the A100s) with oneAPI + the LAMMPS INTEL package. `gcc/13` must
+    be loaded and `icpx` pinned with --gcc-toolchain, or C++17 <filesystem>
+    fails to link (fixed upstream in the repo, commit bd9a1f7).
+  - The GPU implementation of the mc-sites kit is marked NOT YET VALIDATED
+    in the repo README (commit 4cbc2ce). Do not present GPU mc-sites
+    numbers as verified.
+  - viper is TWO clusters (CPU and GPU) with separate scratch filesystems
+    (/viper/ptmp1 vs /viper/ptmp2). Picking the wrong one silently writes
+    to the wrong side.

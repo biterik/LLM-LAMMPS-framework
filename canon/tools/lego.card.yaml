@@ -1,0 +1,44 @@
+# TOOL CARD — lego
+# Contract for the pilot. Code lives in github.com/__GH__/LEGO, built &
+# installed to ~/bin/ on Mac AND cluster. Canon holds only this card.
+
+id:            lego
+purpose:       |
+  Crystal structure generator for MD. Builds arbitrarily rotated and cut
+  single-/multi-element crystals (and supercells from POSCAR) and writes
+  them as LAMMPS data or IMD. Reach for it to create an initial oriented
+  configuration before equilibration.
+owner:         external
+upstream:      https://github.com/__GH__/LEGO
+
+run_where:     large-data->cluster      # OpenMP; large boxes belong on the cluster.
+                                         # Small test cells are fine on the Mac.
+
+exec:
+  mac:         lego <parameter_file>     # on $PATH via ~/bin
+  cluster:     lego <parameter_file>     # on $PATH via ~/bin (cmmg: cmti login)
+
+inputs:        |
+  One plain-text parameter file, `keyword value` per line, `#` comments.
+  Required: structure, outfile, box_x, box_y, box_z.
+    structure       — built-in: sc, fcc, bcc, hex, hcp, L12, B2, D011
+                      OR `poscar` (+ structure_file PATH for custom).
+    lattice_const[/_b/_c], mass[/1]      — override cell / species.
+    orientation (one of, highest priority first):
+      rotmat1_x/_y/_z  (explicit 3x3) | new_x/new_y/new_z (Miller dirs) |
+      axis1/angle1 (+axis2/angle2).
+    box_x/y/z       — target box size (Angstrom); box_mode e.g. periodic.
+    output_format   — imd | lammps ;   outfile — output filename.
+outputs:       |
+  One structure file named by `outfile`, in IMD or LAMMPS data format.
+  Use a descriptive name (hard rule 2), e.g. Ni-fcc-111-50A.lammps .
+
+version:       LEGO 2.x rewrite (2026); git HEAD c4f5667 (2026-06-01)
+last_verified: 2026-06-01 against repo <DEVEL_ROOT>/LEGO (README + `lego` no-arg help)
+
+gotchas:       |
+  - macOS Apple Clang has no OpenMP → single-threaded counting pass; for
+    large systems build with Homebrew gcc (`make CC=gcc-15 OMP_FLAG=-fopenmp`).
+  - The `structures/` dir must be reachable at runtime (structure search path).
+  - A `lego.py` Python wrapper exists in the repo (LEGO/python) if a
+    scripted driver is wanted instead of the param file.

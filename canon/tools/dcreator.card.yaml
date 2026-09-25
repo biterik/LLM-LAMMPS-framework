@@ -1,0 +1,49 @@
+# TOOL CARD — dcreator
+# Contract for the pilot. Code lives in github.com/__GH__/dcreator, built &
+# installed to ~/bin/ on Mac AND cluster. Canon holds only this card.
+
+id:            dcreator
+purpose:       |
+  Parallel Volterra dislocation inserter. Rotates a crystal into the
+  dislocation frame and applies a simplified piecewise displacement field
+  (untouched / linear-ramp / rigid-shift) so a rectangular periodic box
+  stays periodic with no box tilt and no atoms added/removed. Built for
+  very large systems (1e8+ atoms). Companion to lego.
+owner:         external
+upstream:      https://github.com/__GH__/dcreator    # DOI 10.5281/zenodo.19502900
+
+run_where:     large-data->cluster      # designed for huge cells; run on the cluster.
+
+exec:
+  mac:         dcreator <param.dissparam>     # on $PATH via ~/bin
+  cluster:     dcreator <param.dissparam>     # on $PATH via ~/bin
+  # Python wrapper: `pip install -e python/`; pydcreator (DislocationJob/
+  # DislocationSpec/DisplacementMode); honours DCREATOR_BIN env.
+
+inputs:        |
+  One `.dissparam` key/value file. Keys:
+    configfile        — input config (lammps_data | lammps_dump | imd; auto-sniffed)
+    outfile           — output path
+    new_x/new_y/new_z — sample orientation basis (supply at least two)
+    burgersv          — full Burgers vector, crystal frame (direction x magnitude)
+    linev             — dislocation line direction
+    glideplane        — glide-plane normal
+    point             — point on the line, in SAMPLE-frame coords
+    stripe            — linear-ramp strip width along glide direction
+    displacement_mode — upper_half (default) | lower_half | symmetric
+    rigid_side        — right (default) | left
+    input_format      — auto (default) | lammps_data | lammps_dump | imd
+    output_format     — lammps_data (default) | imd
+    lammps_atom_style — atomic (default) | charge | molecular | full | bond
+    num_threads       — OpenMP threads; 0 = use OMP_NUM_THREADS
+outputs:       |
+  One config file (outfile) with displaced positions; same atom count as
+  input. Descriptive name, e.g. Ni-edge-a2-110-on-111.data .
+
+version:       dcreator 2.0.0; git HEAD f212e49 (2026-04-11)
+last_verified: 2026-04-11 against repo <DEVEL_ROOT>/dcreator (README "All recognized parameter keys")
+
+gotchas:       |
+  - `symmetric` mode reproduces legacy dcreator 1.x output (±b/2 split).
+  - `point` is in sample-frame coords, NOT crystal frame — easy to mix up.
+  - macOS: needs Homebrew LLVM + libomp (Apple clang lacks OpenMP); CMake>=3.20.

@@ -1,0 +1,7 @@
+# Private overlay repo — .gitignore
+#
+# .this-machine names WHICH Mac this checkout is on, so it must differ per
+# machine and must never sync. Everything else here is shared.
+.this-machine
+.DS_Store
+._*

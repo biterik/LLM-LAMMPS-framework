@@ -1,0 +1,37 @@
+# TOOL CARD — afc (Atomic Format Converter)
+# Contract for the pilot. Code lives in github.com/__GH__/LEGO-TOOLS
+# (afc/ subdir), built & installed to ~/bin/ on Mac AND cluster.
+
+id:            afc
+purpose:       |
+  Convert atomistic configuration files between Extended XYZ, LAMMPS data
+  (atomic style), and CEL (Dr Probe supercell). Reach for it when a tool
+  downstream needs a different format than what's on disk.
+owner:         external
+upstream:      https://github.com/__GH__/LEGO-TOOLS    # afc/ component
+
+run_where:     large-data->cluster      # large files on the cluster;
+                                         # small one-off conversions fine on Mac.
+
+exec:
+  mac:         afc [options] INPUT OUTPUT     # on $PATH via ~/bin
+  cluster:     afc [options] INPUT OUTPUT     # on $PATH via ~/bin
+
+inputs:        |
+  INPUT in xyz | lammps (atomic) | cel; format auto-detected from extension
+  or forced with -i. Gzip (.gz) transparent.
+  Options:
+    -i FMT   input format  : xyz | lammps | cel   (default: by extension)
+    -o FMT   output format : xyz | lammps | cel   (default: by extension)
+    -t MAP   type map, e.g. "1=Ni,2=Al" or "Ni,Al"
+  Extensions: .xyz[.gz] | .lmp[.gz] .data[.gz] | .cel[.gz]
+outputs:       |
+  One converted file (OUTPUT). Descriptive name preserving meaning.
+
+version:       git HEAD 99cc406 (2026-04-19)     # same repo as lego-tools
+last_verified: 2026-04-19 against repo <DEVEL_ROOT>/LEGO-TOOLS (README "afc")
+
+gotchas:       |
+  - `-t` type map is REQUIRED when converting to CEL from a numeric-type
+    format (LAMMPS), since CEL needs element symbols. e.g. `afc -t Ni g.lmp g.cel`.
+  - LAMMPS side is atomic style only.

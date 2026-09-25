@@ -1,0 +1,42 @@
+# canon/local/local.yaml — machine map and local roots.
+# NEVER COMMITTED to the public repo. Synced across machines via the
+# private overlay repo (see canon/local.example/README.md).
+
+updated: 2026-01-01
+
+mac_user: <MAC_USER>
+
+# WHICH MACHINE AM I ON?
+# Read canon/local/.this-machine — a one-line file naming the machine.
+# It is per-machine and deliberately NOT synced (see .gitignore here).
+#
+# Do NOT use `hostname`: a Cowork session's shell runs in an isolated
+# Linux VM, not on macOS, so it returns the VM's name ("claude") and
+# tells you nothing about which Mac is attached. Verified 2026-07-28.
+machines:
+  M5:
+    role: office workstation; heavy compute; drives cluster jobs
+    has_simulations: true
+  M2:
+    role: primary trusted daily driver
+    has_simulations: true
+  M1:
+    role: disposable travel laptop — no personal data, code + SSH only
+    has_simulations: false     # never mirror simulation data here
+  mini:
+    role: always-on agent host over Tailscale
+    has_simulations: false
+
+# Local roots. Absolute paths (no relative forms, no placeholders).
+roots:
+  devel:        /Users/<MAC_USER>/DEVEL
+  repo:         /Users/<MAC_USER>/DEVEL/LLM-LAMMPS
+  simulations:  /Users/<MAC_USER>/Desktop/SIMULATIONS
+  projects:     /Users/<MAC_USER>/Desktop/PROJECTS         # admin; read-only
+  mounts:       /Users/<MAC_USER>/cluster-mounts           # sshfs mountpoints
+  bin:          /Users/<MAC_USER>/bin                      # tool-card exec.mac
+
+
+# The simulation folder is STILL asked for every session (startup ritual
+# step 2). This is the default offered, not a substitute for asking.
+default_simulation_root: /Users/<MAC_USER>/Desktop/SIMULATIONS

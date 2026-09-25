@@ -1,0 +1,3 @@
+# Copy to canon/local/.this-machine with ONE line naming this machine.
+# Must match a key in local.yaml's machines: map. Never synced.
+M5

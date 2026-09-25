@@ -1,0 +1,185 @@
+log LOGFILE
+
+# PROBE-INPUT SKELETON  (canon/templates/probe-input.in.skel)
+# ---------------------------------------------------------------------------
+# Render with sed (bare ALL-CAPS tokens, per style/lammps.md §3):
+#   LOGFILE POTLABEL STRUCTFILE PERSTEPFILE BLOCKAVGFILE
+# Then fill the two marked BLOCKS by hand (potential, phases) for the method.
+#
+# WHAT A PROBE IS (mandatory before any production sbatch of a new/edited .in,
+# per canon/learnings.md "Cluster discipline"): a clone of the production .in
+# with the SAME fix stack, output paths, and precision formats, but tiny
+# (10-step) phases so every code path fires in ~seconds. Run it at 2 MPI
+# tasks to also exercise parallel decomposition. It catches parse-time
+# errors, variable-substitution failures, fix incompatibilities, MPI-decomp
+# bugs, missing files, and output-format errors BEFORE a long production job
+# burns a queue slot. It also doubles as the L26 walltime-calibration source:
+# one `Performance:` line per `run` block lands in the log.
+#
+# Walltime budget for the probe itself: 5 min (--time=00:05:00, --ntasks=2).
+# IMPORTANT (L26): the probe runs --ntasks=2; if production runs --ntasks=1,
+# HALVE the probe's steps/s before sizing production --time.
+#
+# Lessons baked in (do not "simplify" these away):
+#   L19/L30/L31  per-step `fix print` uses `$(step)` (bare) + float formats
+#                only; NEVER `$(step:%d)` — %d is invalid in $(...) (doubles).
+#   L27          `thermo 1000000` so the log carries run-boundary blocks only,
+#                not a duplicate of the dedicated per-step/.dat streams.
+#   L28          NO `fix_modify <id> format ...` on `fix ave/time` (unsupported).
+#   L29          `fix ave/time` title1/title2 are LITERAL — no ${var}/$() in them.
+#   probe rule   every phase brackets a `print "PROBE marker: ..."` static
+#                string, ending in "ALL PHASES COMPLETE"; the .slurm echoes
+#                "PROBE DONE" to stdout on clean exit.
+# ---------------------------------------------------------------------------
+
+# -- 1. Variables ---------------------------------------------------------
+
+variable POTDIR          string /cmmc/ptmp/<CLUSTER_USER>/POTENTIALS   # cmmg default
+variable POTENTIAL_LABEL string POTLABEL
+variable STRUCT          string STRUCTFILE
+
+variable VSEED           string 42        # one fixed seed for reproducibility
+variable PRESTRAIN       equal  1.0039    # a(0K)*(1+alpha*300), alpha~13e-6/K
+variable T_RUN           equal  300.0
+variable T_INIT          equal  600.0     # KE at 2x target equipartitions to ~T_RUN
+variable TDAMP           equal  0.1        # 100 x timestep (LAMMPS-recipe default)
+variable PDAMP           equal  1.0        # 1000 x timestep; barostat 10x slower
+variable DT              equal  0.001
+
+# probe step counts: tiny but enough to fire one BLOCK_AVG output per phase
+variable NVE_STEPS       string 10
+variable NVT_STEPS       string 10
+variable NPT_TRAN_STEPS  string 10
+variable NPT_PROD_STEPS  string 10
+# (NVT-scan variant instead uses: NVT_GUESS_STEPS NVT_REEQ_STEPS NVT_PROD_STEPS)
+
+variable PER_STEP_FILE   string PERSTEPFILE
+variable BLOCK_AVG_FILE  string BLOCKAVGFILE
+
+# -- 2. Setup -------------------------------------------------------------
+
+units        metal
+boundary     p p p
+atom_style   atomic
+newton       on
+neighbor     2.0 bin
+neigh_modify every 1 delay 0 check yes
+
+# -- 3. Structure ---------------------------------------------------------
+
+read_data    ${STRUCT}
+mass         1 58.6934
+
+# -- 4. Potential ---  <<< POTENTIAL BLOCK: pick ONE, delete the other >>> -
+#
+# EAM (e.g. Pezold-EAM):
+#   variable POTENTIAL_FILE string ni_h_rcut4.90_rcut2.eam.alloy
+#   pair_style   eam/alloy
+#   pair_coeff   * * ${POTDIR}/${POTENTIAL_FILE} Ni
+#
+# MEAM (e.g. KoShimLee-MEAM) — note the library element list (L4) must match
+# the .meam parameter file's index references:
+#   variable POTENTIAL_LIB string NiH_KoShimLee_library.meam
+#   variable POTENTIAL_PAR string NiH_KoShimLee.meam
+#   pair_style   meam
+#   pair_coeff   * * ${POTDIR}/${POTENTIAL_LIB} Ni H ${POTDIR}/${POTENTIAL_PAR} Ni
+#
+# (pair_style meam, no /c, for lammps/250722 — L8; verify against the
+#  cluster's loaded module, L9/§1.9.)
+
+# -- 5. Pre-strain (same as production) -----------------------------------
+
+change_box   all x scale ${PRESTRAIN} y scale ${PRESTRAIN} z scale ${PRESTRAIN} remap
+
+# -- 6. Integrator and initial velocities (same as production) ------------
+
+timestep     ${DT}
+velocity     all create ${T_INIT} ${VSEED} dist gaussian mom yes rot yes
+
+# -- 7. Equal-style variables (same as production) ------------------------
+
+variable lx_inst    equal lx
+variable ly_inst    equal ly
+variable lz_inst    equal lz
+variable temp_inst  equal temp
+variable press_inst equal press
+variable pxx_inst   equal pxx
+variable pyy_inst   equal pyy
+variable pzz_inst   equal pzz
+
+# -- 8. Per-step diagnostic (SAME precision formats as production) --------
+# L31: $(step) is bare (default %.20g prints the integer step exactly).
+#      NEVER $(step:%d) — %d is illegal inside $(...). Float fields use %.Nf.
+
+fix STEP_LOG all print 1 "$(step) $(temp:%.3f) $(press:%.3f) $(pxx:%.3f) $(pyy:%.3f) $(pzz:%.3f) $(lx:%.6f) $(ly:%.6f) $(lz:%.6f) $(pe:%.6f) $(ke:%.6f)" title "# step temp[K] press[bar] pxx[bar] pyy[bar] pzz[bar] lx[A] ly[A] lz[A] pe[eV] ke[eV]" file ${PER_STEP_FILE} screen no
+
+# -- 9. Block-averaged stream (TINY cadence so blocks fire in probe) ------
+# Nevery=2 Nrepeat=5 Nfreq=10 -> one block per 10-step phase. Verifies the
+# fix ave/time path end-to-end incl. titles + default-%g per column.
+# L28: do NOT add `fix_modify BLOCK_AVG format ...` (unsupported here).
+# L29: title1/title2 below are literal; no ${var}/$() substitution happens.
+
+fix BLOCK_AVG all ave/time 2 5 10 v_lx_inst v_ly_inst v_lz_inst v_temp_inst v_press_inst v_pxx_inst v_pyy_inst v_pzz_inst title1 "# PROBE 10-step block-averaged thermo (Nevery=2 Nrepeat=5 Nfreq=10)" title2 "# step lx[A] ly[A] lz[A] temp[K] press[bar] pxx[bar] pyy[bar] pzz[bar]" file ${BLOCK_AVG_FILE}
+
+# -- 10. Thermo on log (run-boundaries only; L27) -------------------------
+
+thermo_style custom step temp press pxx pyy pzz lx ly lz pe ke
+thermo       1000000
+
+# -- 11. PHASES ---  <<< PHASE BLOCK: pick ONE variant, delete the other >>>
+#
+# === Variant A: NPT (Method 1, a300 direct) ==============================
+# print "PROBE marker: starting phase 1 (NVE)"
+# fix NVE all nve
+# run ${NVE_STEPS}
+# unfix NVE
+# print "PROBE marker: end of phase 1 (NVE)"
+#
+# print "PROBE marker: starting phase 2 (NVT)"
+# fix NVT all nvt temp ${T_RUN} ${T_RUN} ${TDAMP}
+# run ${NVT_STEPS}
+# unfix NVT
+# print "PROBE marker: end of phase 2 (NVT)"
+#
+# print "PROBE marker: starting phase 3+4 (NPT)"
+# fix NPT all npt temp ${T_RUN} ${T_RUN} ${TDAMP} iso 0.0 0.0 ${PDAMP}
+# run ${NPT_TRAN_STEPS}
+# run ${NPT_PROD_STEPS}
+# unfix NPT
+# print "PROBE marker: end of phase 3+4 (NPT)"
+#
+# === Variant B: NVT scan (Method 2, sigma=0 root) ========================
+# Requires EPS_SCAN passed via -var on the command line (and in LOGFILE /
+# PERSTEPFILE / BLOCKAVGFILE names: ...-scan-eps${EPS_SCAN}-...). Continuous
+# NVT with a change_box in the middle; note change_box uses $(1.0+v_EPS_SCAN)
+# (float arithmetic in $(...) — fine; it is the %d case that is illegal).
+# print "PROBE marker: starting phase 1 (NVE)"
+# fix NVE all nve
+# run ${NVE_STEPS}
+# unfix NVE
+# print "PROBE marker: end of phase 1 (NVE)"
+#
+# print "PROBE marker: starting phase 2 (NVT-guess)"
+# fix NVT all nvt temp ${T_RUN} ${T_RUN} ${TDAMP}
+# run ${NVT_GUESS_STEPS}
+# print "PROBE marker: end of phase 2 (NVT-guess)"
+#
+# print "PROBE marker: applying change_box scale (1+EPS_SCAN)"
+# change_box all x scale $(1.0+v_EPS_SCAN) y scale $(1.0+v_EPS_SCAN) z scale $(1.0+v_EPS_SCAN) remap
+#
+# print "PROBE marker: starting phase 3 (NVT-reeq)"
+# run ${NVT_REEQ_STEPS}
+# print "PROBE marker: end of phase 3 (NVT-reeq)"
+#
+# print "PROBE marker: starting phase 4 (NVT-prod)"
+# run ${NVT_PROD_STEPS}
+# unfix NVT
+# print "PROBE marker: end of phase 4 (NVT-prod)"
+# =========================================================================
+
+# -- 12. Cleanup ----------------------------------------------------------
+
+unfix BLOCK_AVG
+unfix STEP_LOG
+
+print "PROBE marker: ALL PHASES COMPLETE. If you see this in the log, the production .in parses and runs cleanly."

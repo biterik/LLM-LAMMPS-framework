@@ -1,0 +1,56 @@
+# canon/clusters.example.yaml — a MINIMAL, FICTIONAL cluster definition.
+#
+# The framework reads `canon/clusters.yaml` (structure: partitions, modules,
+# scratch policy, quirks) and `canon/local/clusters.local.yaml` (identity:
+# real user, host, scratch path). Neither is shipped in the public repo.
+# Copy this file to `canon/clusters.yaml` and describe your own machines;
+# keep every user/host/path as a placeholder here and put the real values in
+# `canon/local/` (see canon/local.example/README.md).
+#
+# Field meaning is documented in ARCHITECTURE.md §6 ("Clusters and identity").
+
+updated: 2026-09-25
+
+clusters:
+  mycluster:
+    site: "<your computing centre>"
+    aliases: [mc]
+    ssh:
+      user: <CLUSTER_USER>
+      host: <CLUSTER_HOST>              # real name lives in canon/local/clusters.local.yaml
+    paths:
+      ptmp: /scratch/<CLUSTER_USER>     # NOT backed up; where every heavy build/run lives
+      home: /home/<CLUSTER_USER>        # tight quota: dotfiles/config ONLY, never venvs/builds
+      potentials: /scratch/<CLUSTER_USER>/POTENTIALS
+    queue: slurm
+    gpu: false
+    partitions:
+      shared:    { name: s.mycluster, max_nodes: 1, note: "shared nodes, default RAM/CPU 2 GB" }
+      parallel:  { name: p.mycluster, exclusive: true, note: "whole nodes, multi-node MPI" }
+    walltime: { default: "24:00:00", max: "96:00:00" }
+    sbatch_defaults:
+      hint: nomultithread
+      mail_type: FAIL,TIME_LIMIT        # BEGIN/END are sent by the notify helper instead
+    modules:
+      lammps:
+        - lammps/250722                 # the version you validated inputs against
+      build: [gcc/13, openmpi/5.0, cmake/3.30, mkl/2025.2]
+      python: python/3.12               # for TensorFlow / ML-potential venvs; venvs go under ptmp
+    binaries:
+      module: lmp                       # from `module load lammps/<ver>`; MPI-built, sbatch only
+    quirks:
+      - id: lmp_requires_sbatch
+        text: "MPI-linked lmp aborts in MPI_Init on a login node. Every LAMMPS invocation goes through sbatch/srun; the only login-node exception is `lmp -h`."
+      - id: home_quota
+        text: "pip/conda venvs, TF wheels and model caches are multi-GB and blow the $HOME quota. Set PIP_CACHE_DIR, TMPDIR and any model-cache variable to ptmp; use `pip --no-cache-dir`."
+    docs_url: "https://example.edu/docs/mycluster"
+    downtimes: { pattern: "monthly maintenance window" }
+
+# ---------------------------------------------------------------------
+# CROSS-CLUSTER HARD RULES (the framework assumes these everywhere)
+# 1. Nothing is installed into $HOME — scratch only, with caches redirected.
+# 2. Every `module load` is version-pinned; job env = `module purge` + explicit loads.
+# 3. LAMMPS (and any MPI code) runs only inside a SLURM job.
+# 4. Scratch is not backed up: expensive artifacts are mirrored to the backed-up
+#    workstation before a thread is closed (ARCHITECTURE.md "survivability").
+# 5. The LLM never reaches the cluster itself: propose -> The user runs.

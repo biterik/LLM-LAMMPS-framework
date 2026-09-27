@@ -437,6 +437,133 @@ The loud failure is a `ValueError` on `float()`. The dangerous one is a command
 whose text happens to parse -- a hardcoded literal in the command -- where the
 harvest returns a plausible wrong number and nothing raises.
 
+### 1.21 Capture fix/compute results as numbers before teardown (L50, extends 1.17)
+
+An equal-style variable whose FORMULA references `f_ID`/`c_ID` is evaluated
+late -- at every use -- so it dies at the first use after `unfix ID` /
+`uncompute ID`, one consumer further out than the thermo_style case of 1.17
+and invisible to that lint. Capture anything that must survive a teardown
+with immediate evaluation: `variable X equal $(f_ID[1])`, never
+`variable X equal f_ID[1]` followed by `unfix ID`.
+
+```
+grep -n 'variable .* equal .*[fc]_' <input>.in   # each: is the fix/compute still alive at every later use?
+```
+(2026-09-23, RE-ON-CLIMB thread 01 run 02 draft. Merged 2026-09-27.)
+
+### 1.22 Distinct seeds for every random-selection command
+
+Never pass the same RNG seed to two selection commands in one input
+(`set type/ratio`, `set type/fraction`, `delete_atoms random`, `create_atoms
+random`, `velocity create`): identical seeds re-select the same sites, so a
+"random Re" and a "random vacancy" selection land on each other. Derive each
+seed from the run seed with a distinct offset (`${SEED}+1`, `+2`, ...), and
+where one species must keep an exact count, restrict the second selection to
+a group that excludes it.
+
+```
+grep -no 'random [0-9]* [^ ]*\|seed [^ ]*\|create [0-9.]* [^ ]*' <input>.in | sort | uniq -d   # any repeated seed = fail
+```
+(2026-09-23, RE-ON-CLIMB thread 02 Re-site map. Merged 2026-09-27.)
+
+### 1.23 Starting from a relaxed single-element cell: extra atom types and an atom map
+
+Two `read_data` preconditions whenever an input reads a one-element relaxed
+cell and then adds a species or addresses atoms by id: (1)
+`read_data <file> extra/atom/types N` -- a data file written from a one-type
+cell carries `1 atom types`, so `mass 2` / `set ... type 2` fail with
+"Numeric index 2 is out of bounds (1-1)"; (2) `atom_modify map array` BEFORE
+`read_data` whenever a variable uses `x[ID]`, `c_ID[ID]` or any per-atom index
+-- `atom_style atomic` builds no map by default ("Indexed per-atom vector in
+variable formula without atom map").
+
+```
+grep -n 'set .*type 2\|mass 2' <input>.in && grep -n 'extra/atom/types' <input>.in
+grep -n '\[[0-9]*\]' <input>.in && grep -n 'atom_modify map' <input>.in
+```
+(2026-09-23, RE-ON-CLIMB thread 02. Merged 2026-09-27.)
+
+### 1.24 A consumed `fix ave/time` needs a phase-local timestep, a guard and a production-shaped probe
+
+Second occurrence of learnings.md "A probe override can silence a gate", in
+the reverse direction (probe passed, production failed). Any `fix ave/time`
+whose value is CONSUMED -- by `$()`, a variable, `change_box`, a RESULT line --
+must (a) be preceded by `reset_timestep 0` at the start of its phase (unless a
+gcmc-like fix is defined, L37), with Nfreq = phase length = Nevery*Nrepeat;
+(b) be followed by an in-input plausibility guard that `quit 1`s on 0 or
+out-of-range; (c) be probed with counts that keep production's ratios
+(NEQUIL/NSAMPLE, NFREQ/NSAMPLE), not arbitrary 10-step phases. A fix defined
+mid-run whose first window needs samples from before it existed skips that
+window silently and its consumer reads 0.
+
+```
+# for each `fix ID ... ave/time Ne Nr Nf` whose f_ID is consumed: a reset_timestep
+# between the preceding run and the fix line, or fail; probe counts give the same
+# (NEQUIL mod NFREQ, NSAMPLE/NFREQ) as production.
+```
+(2026-09-24, RE-ON-CLIMB thread 01 run 02, job 22877737: 9 tasks x 16 ranks
+x 45 min lost; the probe, NEQUIL=10 NFREQ=10, aligned by accident. Merged
+2026-09-27.)
+
+### 1.25 No relational expression inside `ternary()` in an atom-style variable
+
+`variable in atom ternary(10>0,(v_d2)<=100,1)` gives 0 for every atom while
+`variable in atom (v_d2)<=100` is correct (16140 vs 0 atoms, LAMMPS 22 Jul
+2025). Effect: `group X variable in` is empty. Switch via an equal-style
+parameter instead (e.g. `radius^2 = ternary(${R}>0,${R}*${R},1e12)`) and
+guard every `group ... variable` with a count check that `quit`s on an
+implausible count.
+(2026-09-24, RE-ON-CLIMB thread 02; caught by the in-input guard, not the lint.
+Merged 2026-09-27.)
+
+### 1.26 `delete_atoms` renumbers ids by default -- `compress no`, then `velocity ... loop geom`
+
+Any input that deletes atoms AND whose outputs are later matched by atom id
+(ground-truth lists, tracking of solutes/defect atoms across dumps,
+before/after comparisons) must pass `compress no`; otherwise the "deleted" set
+reads as the last N ids. `compress no` then breaks `velocity create` with its
+default `loop all` ("Atom IDs must be consecutive") -- pair it with `loop geom`
+(or `loop local`).
+
+```
+grep -n 'delete_atoms' <input>.in | grep -v 'compress no'      # WARN if a dump with id follows
+grep -n 'compress no' <input>.in && grep -n 'velocity .* create' <input>.in | grep -v 'loop geom\|loop local'
+```
+(2026-09-24, RE-ON-CLIMB thread 03 run 02: jobs 22879218 (invalid ground
+truth) and 22879228 (died at setup). Merged 2026-09-27.)
+
+### 1.27 No thermo-keyword immediates before the first `run`; `$(...)` in `if` command strings is evaluated at parse time
+
+Immediates of thermo keywords (`$(temp)`, `$(press)`, `$(pe)`, `$(lx)` ...)
+are legal only after the first `run`/`minimize` ("Thermo keyword temp in
+variable requires thermo to use/init temperature"). Put status prints after a
+run, or precede them with `run 0`. This bites exactly the input whose first
+`run` sits inside an `if` block (ramp only for cold cells) on the path that
+skips it. Companion: `$(...)` inside the command strings of an `if` is
+evaluated when the `if` is parsed, not when its commands execute.
+
+```
+awk '/^(run|minimize)/{r=1} /\$\((temp|press|pe|ke|lx|ly|lz|vol|enthalpy)/ && !r {print FILENAME": "FNR": "$0}' <input>.in
+```
+(2026-09-25, RE-ON-CLIMB thread 03 run 03, probe 22883387 on the no-ramp
+Re-cloud path. Merged 2026-09-27.)
+
+### 1.28 Monte-Carlo (SGC / sgcmc) inputs: four gotchas
+
+- `fix sgcmc` (MC package, stable 2025) refuses triclinic boxes, and every MPI
+  subdomain must be >= 4 x the pair cutoff (cutforce, no skin) -- choose the
+  rank count accordingly. Tool-card candidate.
+- Never edit a LAMMPS input while a job that reads it is running: the file is
+  read incrementally, so the post-run commands (write_data, final prints) come
+  from the edited file at a stale offset. Variants go to a new file.
+- SGC swaps from an as-scaled start (0 K lattice stretched to a(T)) run under
+  several GPa of tension and over-fill the larger solute (Ni-Re: 4.0 -> 6.3 at%
+  in two cycles): MD-only pre-equilibration at zero pressure before the first
+  swap.
+- `min()` in an equal-style variable is a vector special function ("Invalid
+  special function min()"); use `(a<b)*a+(a>=b)*b` or a ternary.
+(2026-09-24, RE-ON-CLIMB thread 04 MC/MD Re-cloud draft. Merged 2026-09-27.)
+
 ## 2. Rules from lessons.md
 
 This section references the canonical entries in `../lessons.md`. The

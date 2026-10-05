@@ -564,6 +564,51 @@ Re-cloud path. Merged 2026-09-27.)
   special function min()"); use `(a<b)*a+(a>=b)*b` or a ternary.
 (2026-09-24, RE-ON-CLIMB thread 04 MC/MD Re-cloud draft. Merged 2026-09-27.)
 
+### 1.29 No net momentum, ever (L51)
+
+Every MD phase runs with zero total linear momentum, from its first step to
+its last. Lint: `canon/templates/lint-lammps-input.sh` (hard gate).
+
+1. **Start of every phase.** A phase that reuses velocities it did not create
+   in the same input (`read_data` with a Velocities section, `read_restart`,
+   the state after an MC or MC/MD phase) starts with
+   `velocity all zero linear`. Keep the velocities, do not redraw them: zeroing
+   shifts every atom by the same ~1e-6 of its thermal velocity and leaves the
+   position-velocity correlations of an equilibrated state intact. Redraw
+   (`velocity all create ${T} <seed> mom yes rot no dist gaussian loop geom`)
+   only when no velocities exist or they belong to a different temperature.
+   Every `velocity ... create` states `mom yes` explicitly.
+2. **During runs that change masses or atom numbers** (`fix sgcmc`,
+   `fix atom/swap`, `fix gcmc`, insertion, deletion): a species swap at fixed
+   velocity changes the momentum by (m_new - m_old) v. Zero it at the MC
+   interval: `fix ZEROMOM all momentum ${NMC} linear 1 1 1 rescale`.
+   `rescale` keeps the kinetic energy, so the thermostat sees no jump.
+3. **Every other MD run** carries the same guard at a sparse interval:
+   `fix ZEROMOM all momentum 1000 linear 1 1 1 rescale`. With Nose-Hoover it
+   only removes round-off; it also catches drift sources nobody thought of.
+   `fix langevin` additionally needs `zero yes` (its random forces do not
+   conserve momentum).
+4. **No angular zeroing in periodic cells.** Angular momentum is not conserved
+   under periodic boundaries and is computed from unwrapped coordinates, so
+   `fix momentum ... angular` / `velocity ... rot yes` in a `p p p` cell apply
+   spurious rotations. Use them only for systems free in all three directions
+   (clusters, nanoparticles); for wires and slabs monitor the angular momentum
+   about the free axis and decide case by case.
+5. **Monitor + gate.** Every thermo stream carries the centre-of-mass velocity,
+   `$(vcm(all,x):%.3e) $(vcm(all,y):%.3e) $(vcm(all,z):%.3e)` (A/ps, columns
+   `vcm_x_Aps vcm_y_Aps vcm_z_Aps`). A probe FAILS if any |vcm| component
+   exceeds 1e-4 A/ps (0.01 m/s, < 1.5 A over 15 ns).
+6. **Analysis.** Any analysis reporting an ABSOLUTE position over time (line
+   height, interface, cluster centre) writes the per-frame COM (from unwrapped
+   positions) next to it and reports COM-corrected positions; fixed spatial
+   windows (stripes, slabs) are defined in the COM-corrected frame.
+7. **Exempt** (momentum not conserved by design): fixed or frozen atoms,
+   walls, indenters, applied external forces, NEMD/shear. The input header
+   carries `# MOMENTUM-EXEMPT: <reason>`; the vcm columns stay as a diagnostic.
+
+(the user 2026-10-05, after RE-ON-CLIMB v2 E2/F2 drifted rigidly by 0.3-0.6 m/s
+for 15 ns; merges inbox item 2026-09-30.)
+
 ## 2. Rules from lessons.md
 
 This section references the canonical entries in `../lessons.md`. The
@@ -593,6 +638,7 @@ context when reading inputs.
 - **L30** — Standalone `print`: no bare `%` (printf-conversion trap); keep static or use `$()`/`${}` (see §1.12).
 - **L31** — `%d`/`%i`/`%x` illegal inside `$(...)` (values are doubles) in both `print` and `fix print`; use `$(step)` or a float format (see §1.12). Corrects L30's discriminator.
 - **L48** — LAMMPS echoes each command to the log before its output; a `.log` harvest must not trust a bare `re.search` (see §1.20).
+- **L51** — No net momentum, ever: zero at every phase start, `fix momentum ... linear 1 1 1 rescale` guard, vcm monitored and gated, no angular zeroing under PBC (see §1.29).
 
 Remaining placeholder slots (still lost between sessions):
 **L11, L16** — see `../lessons.md` (shell-rule slots).

@@ -5,7 +5,7 @@
 # Exit:    0 if all checks pass; non-zero with diagnostics on first failure.
 #
 # Mechanizes ARCHITECTURE.md §12 Layer 1 checklist as encoded in
-# <REPO_ROOT>/canon/style/lammps.md §1.1–1.5, 1.8, 1.16, 1.17-thermo (hard gates).
+# <REPO_ROOT>/canon/style/lammps.md §1.1–1.5, 1.8, 1.16, 1.17-thermo, 1.29 (hard gates).
 #
 # Does NOT cover (still manual review required):
 #   §1.4 MEAM library element index alignment with parameter file
@@ -172,6 +172,41 @@ SUSPECTS=$(grep -nE '\b[A-Z][A-Z0-9_]{2,}\b' "$INPUT" \
 if [[ -n "$SUSPECTS" ]]; then
   echo "WARN: potential unsubstituted ALL CAPS placeholders (review manually):" >&2
   echo "$SUSPECTS" | head -20 >&2
+fi
+
+# §1.29 — No net momentum, ever (L51)
+#   Every MD input: (a) momentum zeroed at the start of any phase that reuses
+#   velocities (read_data/read_restart) and fresh velocities created with mom yes,
+#   (b) a `fix ... momentum N linear 1 1 1 rescale` guard, (c) `zero yes` on
+#   fix langevin, (d) no `angular` zeroing in a fully periodic cell, (e) the
+#   centre-of-mass velocity vcm(all) in an output stream. Exempt: inputs whose
+#   header carries "MOMENTUM-EXEMPT:" with the reason (fixed atoms, walls,
+#   indenters, external forces, NEMD).
+JOINED=$(sed -e ':a' -e '/&[[:space:]]*$/N; s/&[[:space:]]*\n/ /; ta' "$INPUT" | sed -e 's/#.*$//')
+if echo "$JOINED" | grep -qE '^\s*fix\s+\S+\s+\S+\s+(nve|nvt|npt|nph|langevin|temp/csvr|temp/berendsen|rigid\S*)\b'; then
+  if grep -q 'MOMENTUM-EXEMPT:' "$INPUT"; then
+    echo "  ok: L51 — MD input declared MOMENTUM-EXEMPT (reason in header):" >&2
+    grep 'MOMENTUM-EXEMPT:' "$INPUT" | head -2 >&2
+  else
+    echo "$JOINED" | grep -qE '^\s*fix\s+\S+\s+\S+\s+momentum\s+\S+.*\blinear\s+1\s+1\s+1\b' \
+      || fail "L51 — MD input without a momentum guard. Add 'fix ZEROMOM all momentum 1000 linear 1 1 1 rescale' (interval = MC interval for MC/MD). See style/lammps.md 1.29."
+    if echo "$JOINED" | grep -qE '^\s*(read_data|read_restart)\b'; then
+      echo "$JOINED" | grep -qE '^\s*velocity\s+\S+\s+(zero\s+linear|create\b.*\bmom\s+yes)' \
+        || fail "L51 — state read from file but no 'velocity all zero linear' (or 'velocity ... create ... mom yes'). Velocities from an MC/MD state carry net momentum. See style/lammps.md 1.29."
+    fi
+    if echo "$JOINED" | grep -qE '^\s*velocity\s+\S+\s+create\b' && echo "$JOINED" | grep -E '^\s*velocity\s+\S+\s+create\b' | grep -qvE '\bmom\s+yes\b'; then
+      fail "L51 — 'velocity ... create' without explicit 'mom yes'. See style/lammps.md 1.29."
+    fi
+    if echo "$JOINED" | grep -qE '^\s*fix\s+\S+\s+\S+\s+langevin\b' && echo "$JOINED" | grep -E '^\s*fix\s+\S+\s+\S+\s+langevin\b' | grep -qvE '\bzero\s+yes\b'; then
+      fail "L51 — fix langevin without 'zero yes' (random forces do not conserve momentum). See style/lammps.md 1.29."
+    fi
+    if echo "$JOINED" | grep -qE '^\s*boundary\s+p\s+p\s+p\b' && echo "$JOINED" | grep -qE '^\s*fix\s+\S+\s+\S+\s+momentum\b.*\bangular\b'; then
+      fail "L51 — 'angular' momentum zeroing in a fully periodic cell (angular momentum is not conserved under PBC; LAMMPS would apply spurious rotations). See style/lammps.md 1.29."
+    fi
+    echo "$JOINED" | grep -qE 'vcm\(all' \
+      || fail "L51 — no centre-of-mass velocity vcm(all,x/y/z) in any output stream (thermo_style / fix print). The probe gate needs it. See style/lammps.md 1.29."
+    pass "L51 — momentum zeroed, guarded and monitored"
+  fi
 fi
 
 echo "All mechanical checks passed for $INPUT."

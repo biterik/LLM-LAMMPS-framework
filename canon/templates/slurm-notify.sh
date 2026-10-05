@@ -133,8 +133,12 @@ _lmps_n_identity() {
     _LMPS_N_OUT=""; _LMPS_N_ERR=""
     if command -v scontrol >/dev/null 2>&1 && [[ -n "${SLURM_JOB_ID:-}" ]]; then
         local sc; sc="$(scontrol show job "$SLURM_JOB_ID" 2>/dev/null || true)"
-        _LMPS_N_OUT="$(printf '%s\n' "$sc" | sed -n 's/^ *StdOut=//p' | head -1)"
-        _LMPS_N_ERR="$(printf '%s\n' "$sc" | sed -n 's/^ *StdErr=//p' | head -1)"
+        # NO `| head` here: for the LAST task of an array, $SLURM_JOB_ID is the array's own id and scontrol lists
+        # every still-queued sibling, i.e. many StdOut lines; `head -1` closes the pipe early, sed dies of SIGPIPE,
+        # pipefail turns that into exit 141 and the caller's `set -e` ends the job before it ran (2026-10-05,
+        # hull0k arrays 22930866_40 / 22930868_40). sed -n '1p' reads all input, so no reader exits early.
+        _LMPS_N_OUT="$(printf '%s\n' "$sc" | sed -n 's/^ *StdOut=//p' | sed -n '1p' || true)"
+        _LMPS_N_ERR="$(printf '%s\n' "$sc" | sed -n 's/^ *StdErr=//p' | sed -n '1p' || true)"
     fi
     [[ -n "$_LMPS_N_OUT_OVERRIDE" ]] && _LMPS_N_OUT="$_LMPS_N_OUT_OVERRIDE"
     [[ -n "$_LMPS_N_ERR_OVERRIDE" ]] && _LMPS_N_ERR="$_LMPS_N_ERR_OVERRIDE"

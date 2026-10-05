@@ -90,6 +90,19 @@ srun "$LMP_BIN" -in <input.in> -screen none
 `--job-name` is descriptive (matches the run-dir slug, no
 `job1`/`test`). `--reservation=the user` only when the user says "urgent".
 
+### 3a. `pipefail` traps: an early-closing reader or an empty match kills the script silently
+
+Under `set -euo pipefail` a pipeline fails if ANY member fails, and `set -e` then ends the script - with no message,
+because nothing went wrong in the command you are looking at. Two forms have cost jobs (2026-10-05):
+
+- **`... | head -N` (or `grep -q`, `awk '...;exit'`) after a producer that writes more than N lines**: the reader
+  exits, the producer dies of SIGPIPE, the job ends with exit code 141. Nondeterministic (depends on output size), so
+  it passes tests and fails in production. Use a reader that consumes all input (`sed -n '1p'`, `awk 'NR==1'`), or
+  append `|| true` and test the captured value.
+- **`grep` that may legitimately find nothing**: exit 1 ends the script. Append `|| true` and check the result
+  with its own error message.
+- The main computation runs as `rc=0; cmd || rc=$?; echo "exit code $rc"` so the `.out` always says how it ended.
+
 ## 4. Rules from lessons.md
 
 - **L11** — `module purge` before any `module load` (deterministic env).

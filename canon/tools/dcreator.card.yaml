@@ -6,8 +6,11 @@ id:            dcreator
 purpose:       |
   Parallel Volterra dislocation inserter. Rotates a crystal into the
   dislocation frame and applies a simplified piecewise displacement field
-  (untouched / linear-ramp / rigid-shift) so a rectangular periodic box
-  stays periodic with no box tilt and no atoms added/removed. Built for
+  (untouched / linear-ramp / rigid-shift). Periodic along the LINE with no
+  further action. NOT along the glide direction x: a single dislocation in a
+  p p s slab needs (1) deletion of the atoms the rigid shift pushed out of the
+  box, (2) Lx -> L0 - b_e/2 and (3) a y-offset +-b_s/2 of the x-period vector,
+  applied by ONE affine map (see gotchas; worked example in LEGO-TOOLS/examples). Along z it makes a stacked dipole. Built for
   very large systems (1e8+ atoms). Companion to lego.
 owner:         external
 upstream:      https://github.com/__GH__/dcreator    # DOI 10.5281/zenodo.19502900
@@ -41,9 +44,28 @@ outputs:       |
   input. Descriptive name, e.g. Ni-edge-a2-110-on-111.data .
 
 version:       dcreator 2.0.0; git HEAD f212e49 (2026-04-11)
-last_verified: 2026-04-11 against repo <DEVEL_ROOT>/dcreator (README "All recognized parameter keys")
+last_verified: 2026-10-05 (box rules, kernel.c read); 2026-04-11 against repo <DEVEL_ROOT>/dcreator (README "All recognized parameter keys")
 
 gotchas:       |
+  - SINGLE DISLOCATION IN A p p s SLAB (verified 2026-10-05, EAM-DISLOCS-Ni-Cu
+    thread 05, Rodney PRB 61 8714 / Acta Mater 52 607): the box x-period vector
+    must be the average of the two half-crystals' natural period vectors:
+    Lx' = L0 - b_e/2 and delta = +-b_s/2 (b_e, b_s = edge / screw parts of b).
+    The screw part is a y-OFFSET of the x-period vector, a = (Lx', delta, 0): LAMMPS
+    `change_box xy` cannot do it (it offsets x across the y boundary; tested 2026-10-06,
+    shears ~Lx/Ly too much). Build the cell with the LINE along LAMMPS x, where
+    (xy, ly) = (-delta, Lx'): LEGO-TOOLS/examples/fcc-Ni-single-dislocation-pps/
+    scripts/apply_period_vector.py. Never edit the header (lego-change-box has no remap).
+    Missing Lx' cost the d60 cell 1.27 GPa mean tension; missing xy' leaves a mean
+    sigma_xy ~ mu*b_s/(2Lx) (cross-slip force on the screw part).
+  - rigid_side is in the DISLOCATION frame (x_d = n x l), not the sample frame.
+    Choose it so the edge part of the rigid shift points OUT of the box through the
+    face the rigid region reaches: then delete atoms outside [0,L0) and the seam is
+    a perfect lattice match. Shift pointing INTO the box opens a b_e gap = an
+    opposite dislocation (d30 2026-04). Gate before relaxing:
+    LEGO-TOOLS/examples/fcc-Ni-single-dislocation-pps/scripts/build_single_dislocation_cell.py
+    (builds, gates and writes the corrected cell; check_seam_coordination.py checks the file).
+  - point z: put it mid-gap between two glide planes, not 0.03 A from one.
   - `symmetric` mode reproduces legacy dcreator 1.x output (±b/2 split).
   - `point` is in sample-frame coords, NOT crystal frame — easy to mix up.
   - macOS: needs Homebrew LLVM + libomp (Apple clang lacks OpenMP); CMake>=3.20.

@@ -103,6 +103,26 @@ because nothing went wrong in the command you are looking at. Two forms have cos
   with its own error message.
 - The main computation runs as `rc=0; cmd || rc=$?; echo "exit code $rc"` so the `.out` always says how it ended.
 
+### 3b. Execute before hand-over: the local preflight (added 2026-10-12)
+
+A submit script and the LAMMPS inputs it drives are handed to the user only after they have **executed once outside the
+cluster**: `canon/templates/preflight-local.sh --script <submit.slurm> --cluster-dir <its cluster directory> [...]`.
+The harness mirrors the cluster tree under a local sandbox (every `/cmmc/ptmp/<CLUSTER_USER>/...` path rewritten),
+stubs `srun`/`sbatch`/`module`/`scontrol`, sets the `SLURM_*` variables from the `#SBATCH` header and runs the script
+under `bash -x` with the real LAMMPS (`pip install lammps` gives the same 22 Jul 2025 version as `lammps/250722` on cmmg,
+with MANYBODY, MEAM, MC, VORONOI; no ML-PACE -> `--substitute-pace` runs the same logic with an EAM block). Large
+inputs the script expects (relaxed cells) are supplied with `--standin`. Its verdict is exit 0 + the DONE marker.
+
+Why: pattern lints (lint-lammps-input.sh, `bash -n`) cannot see execution-order errors. Between 2026-10-07 and
+2026-10-12 FOUR probe rounds on two projects were lost to exactly such errors, each costing the user an rsync, a submit and a
+paste: `reset_timestep` with a time-dependent fix defined; `$(v_x)` whose formula read `f_ID` after `unfix ID`; `max()`
+inside an equal-style variable; a relative path used after `cd "$RUN_DIR"`. The local run finds all four in seconds to
+minutes. The cluster probe keeps its job (environment, MPI decomposition, performance, the mail transport) -- it is no
+longer the first execution of the script.
+
+What the preflight does not cover, so the cluster probe still must: `processors` grids (commented out locally), the
+pace pair style when substituted, walltime calibration, the notification mail (the helper falls back to a file locally).
+
 ## 4. Rules from lessons.md
 
 - **L11** — `module purge` before any `module load` (deterministic env).
